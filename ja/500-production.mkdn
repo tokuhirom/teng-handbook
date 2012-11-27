@@ -1,0 +1,44 @@
+僕なりの Teng のつかいかた
+==========================
+
+自分が普段 Teng をつかってる方法についてのべます。
+
+## Schema の管理
+
+Teng::Schema::Declare をつかうか、Schema::Dump をつかうのが基本です。
+Loader は仕事ではあまりつかいませんね。Loader つかえるケースの場合たいていは SQL を単にうちこんじゃう方が楽な気がします。
+
+## inflate/deflate
+
+inflate/deflate は基本的につかいません。
+
+なんかこう、あやしい感じがするんですよね。Teng の inflate/deflate まわりの実装が(ぇ
+
+created\_on みたいなカラムも、created\_on 自体は epoch time をいれるようにしておいて、Row オブジェクトに以下のように定義するとかが好きです。
+
+    package My::DB::Row::Foo;
+    use Time::Piece;
+
+    sub created_on_obj {
+        my $self = shift;
+        localtime($self->created_on);
+    }
+
+## リレーションシップについて
+
+リレーションシップは has\_a とかの設定はそもそもできないのが Teng のいいところですよね。
+DBIC とかつかってるとアホみたいにクエリを大量に発生するコードができがち。
+
+とはいえ、has\_a の関係にあるオブジェクトを SQL で取得するメソッドがあれば楽な局面もおおいものです。そういうときには以下のようにします。
+
+    
+    package My::DB::Row::CD;
+
+    sub fetch_cover {
+        my $self = shift;
+        $self->handle->single('cover' => { id => $self->cover_id });
+    }
+
+fetch\_ というプレフィクスがついていることにより、このメソッドが DB アクセスをともなっていることがわかりやすくなっています。
+また、インスタンス内でのキャッシュもおこなわない方がいいようにおもいます。インスタンス内でのキャッシュにたよって fetch\_ メソッドをよびまくるコードになってしまうと、結局重い処理をみつけるのが面倒になってしまうので。
+

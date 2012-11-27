@@ -1,0 +1,108 @@
+Schema ファイルの生成方法
+=========================
+
+Teng ではスキーマクラスを定義する必要があります。
+
+定義の仕方には3種類あります。
+
+ * ベタな Perl コードで定義する
+ * DSL で定義する
+ * DB からスキーマ構造を Dump する
+ * DB からスキーマ構造を動的に Load する
+
+この章では以後、どのようにあつかっていけばいいかを説明します。
+
+ベタな Perl コードで定義する
+----------------------------
+
+これが一番の基本となる形です。基本をおぼえれば恐いものはありません。なにをするにも基本をしっかりとおぼえていきましょう。
+
+    ### eg/beta.pl
+    use Teng::Schema;
+    use Teng::Schema::Table;
+
+    my $schema = Teng::Schema->new();
+    $schema->add_table(
+        Teng::Schema::Table->new(
+            name => 'member',
+            columns => [
+                qw(id name email)
+            ],
+            primary_keys => ['id'],
+            row_class    => 'My::Row',
+        )
+    );
+
+スキーマオブジェクトを作成して、そこに Teng::Schema::Table のインスタンスを登録していきます。
+
+この方式は見栄えと手間の点から、採用している人は私の知るかぎりはおりません。
+
+DSL で定義する
+--------------
+
+Teng には DSL でスキーマを定義するための Teng::Schema::Declare というモジュールが標準でついてきます。
+以下のように簡単に定義できるのが便利です。
+
+    ### eg/teng-schema-declare.pl
+    package My::Schema;
+    use Teng::Schema::Declare;
+    
+    table {
+        name    "member";
+        pk      "id";
+        columns qw( id name email );
+    };
+
+Teng::Schema::Dumper をつかう
+-----------------------------
+
+Teng::Schema::Dumper をつかうと、DB からスキーマ構造をよみとって Teng のスキーマを生成することができます。
+
+    #!/usr/bin/env perl
+    use strict;
+    use warnings;
+    use DBI;
+    use Teng::Schema::Dumper;
+
+    my $dbh = DBI->connect('dbi:SQLite:dbname=sample/app.db') or die;
+    print Teng::Schema::Dumper->dump(
+        dbh       => $dbh,
+        namespace => 'My::DB',
+    );
+
+このコードをはしらせると以下のような出力をえます。
+
+    ###INCLUDE eg/lib/My/DB.pm
+    package My::DB::Schema;
+    use Teng::Schema::Declare;
+    table {
+        name 'member';
+        pk 'id';
+        columns (
+            'id',
+            'name',
+            'email',
+        );
+    };
+
+    1;
+
+上記のようなコードを `script/teng-schema-dumper.pl` のようなファイル名で保存しておいて、スキーマ変更があるタイミングで走らせればいいというわけです。
+
+Teng::Schema::Loader をつかう
+-----------------------------
+
+Teng::Schema::Loader をつかうと、DB から動的にスキーマオブジェクトを生成することができます。
+
+これは、たとえば使い捨てのスクリプトや速度がどうでもいい場合などにつかうと便利です。
+
+    my $teng = Teng::Schema::Loader->load(
+        dbh => $dbh,
+    );
+
+なお、この Teng::Schema::Loader は名前にはんしてスキーマオブジェクトではなく Teng オブジェクトを返すことに注意してください。
+
+なんでこうなってるのか、、謎です。謎というか、わすれてるだけな気もします。
+
+chiba さんあたりが知ってそうです。
+

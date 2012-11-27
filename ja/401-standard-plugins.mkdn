@@ -1,0 +1,132 @@
+標準添付のプラグイン
+--------------------
+
+この章では標準添付のプラグインについてのべていきます。
+標準添付のプラグインとはいっても、現状 DEPRECATED あつかいになっていないものの方がすくないのでは。。 という説もあってまあ微妙なところではあります。
+
+### Teng::Plugin::Count
+
+行数をかぞえるプラグインです。ウェブアプリケーションなどでもよく使う処理ですので、つかっていきたいプラグインです。
+
+セットアップは以下のようにおこないます。
+
+    package MyDB;
+    use parent qw/Teng/;
+    __PACKAGE__->load_plugin('Count');
+
+使い方は以下のようにします。
+
+    $db->count('user');                   # user テーブルの行数
+    $db->count('user', '*', {type => 2}); # user テーブルの type=2 の行数
+
+このプラグインはオススメです。
+
+オススメ度: 5
+
+### Teng::Plugin::FindOrCreate
+
+`$db->find_or_create($table, $args)` という形式でよびだします。
+
+$args にマッチする行があればそれを返し、なければ INSERT してそのオブジェクトを返します。
+
+たとえばこれはログ集計などの際に便利です。
+
+    my $log = $db->find_or_create('log', {date => $ymd});
+    $log->update({cnt => \"cnt + 1"});
+
+find\_or\_create は便利なので人気も高いのですが、1つの関数の中で2個の SQL 文を発行するので油断がなりません。
+
+SELECT を発行したあとに他のコネクションから INSERT がはしってしまう可能性もあるのです。
+
+そのようなケースが問題にならない場合ならいいのですが、find\_or\_create を使っていると、
+アトミックでない操作が問題になるかどうかの判断を行わずに処理する傾向があるので、個人的にはこのプラグインは好きではありません。
+
+地道にトランザクションをはってからクエリを発行するようにした方がいいように思います。
+
+    my $txn = $db->txn_scope();
+    my $log = $db->single('log', {date => $ymd}, {for_update => 1});
+    unless ($log) {
+        $log = $db->insert('log', {date => $ymd})->refetch;
+    }
+    $log->update({cnt => \"cnt + 1"});
+    $txn->commit;
+
+(この例の場合だと1回の UPDATE 文ですませるのが筋がいいことはいうまでもありませんね :P )
+
+オススメ度: 1
+
+### Teng::Plugin::Lookup
+
+なにかはやいらしいんだけどなんだかよくわからないプラグイン。
+
+なんのために産まれて、なにをしてよろこぶプラグインだかドキュメントをみてもわからない謎さ。
+
+オススメ度: 1
+
+### Teng::Plugin::Pager
+
+ページングをたすけるプラグイン。
+
+ロード方法は以下のように他のものと一緒。
+
+    package MyApp::DB;
+    use parent qw/Teng/;
+    __PACKAGE__->load_plugin('Pager');
+
+実際の使用例は以下のとおり。
+
+    package main;
+    my $db = MyApp::DB->new(dbh => $dbh);
+    my $page = $c->req->param('page') || 1;
+    my ($rows, $pager) = $db->search_with_pager('user' => {type => 3}, {page => $page, rows => 5});
+
+このページャープラグインは、LIMIT OFFSET をつかってページングをおこないます。
+
+また、`{rows => 5}` のように指定されているときに、LIMIT 6 で SELECT して、6行とれた場合最後の行をすてます。
+6行とれたかどうかで、次のページがあるかどうかを判定しています。`SELECT COUNT(*)` のようなクエリは発行しません。
+
+ですから、通常のページャーライブラリのような全部の行数を表示しなくてはならないような場面では利用できません。
+
+ただ、最近では全部のヒット件数をウェブページ上で表示しなくてもいいケースが増えています。
+これには以下のような理由が考えられます。
+
+  * 「もっと見る」で Ajax で次のページを読みこむ手法が一般化したこと
+  * 古いデータは必ずしも見せても意味がないことがわかってきたこと
+  * とりあつかっているデータ量が膨大になってきて全行の行数がわかっても意味がないケースが多いこと
+
+全部の行数が必要ないケースではできるだけこのプラグインをつかうことにより、高速化がはかれるのではないかとおもいます。
+
+なお、このプラグインがかえす $pager というオブジェクトは Data::Page::NoTotalEntries のインスタンスです。
+
+オススメ度: 5
+
+### Teng::Plugin::Pager::MySQLFoundRows
+
+このプラグインは MySQL でしか利用できません。MySQL では `SELECT SQL_CALC_FOUND_ROWS ...` という風に書いておけば、`SELECT FOUND_ROWS()`
+というクエリでLIMIT 句をはずした場合にそのクエリにマッチする行数がわかるのです。
+
+これは非常に便利なのですが、結局 `COUNT(*)` うちなおすのとあまりかわらない時間がかかるので、Teng::Plugin::Pager がつかえる場合にはそちらをつかうのがいいでしょう。
+(場合によっては `COUNT(*)` うちなおすより遅い場合もあるみたいですが、真偽はよくしりません)
+
+オススメ度: 2
+
+### Teng::Plugin::Replace
+
+REPLACE INTO を発行するためのプラグインです。実は以下のようなコードでも同じことができるという説もあります。
+
+    package MyApp;
+    sub replace {
+        my ($self, $table, $args) = @_;
+        $self->insert($table, $args, {prefix => 'REPLACE INTO'});
+    }
+
+しかしこれ、トリガーとのかねあいがうまいこといってるのかどうかよくわからない。
+
+    package MyApp;
+    sub replace {
+        my ($self, $table, $args) = @_;
+        $self->insert($table, $args, {prefix => 'REPLACE INTO'});
+    }
+
+オススメ度: ?
+
