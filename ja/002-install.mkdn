@@ -1,0 +1,10 @@
+インストール
+============
+
+    % cpanm Teng
+
+デス!
+
+普通の CPAN モジュールですから、普通に cpanm コマンドでインストールできます。
+
+cpanm については http://search.cpan.org/dist/App-cpanminus をごらんください。

@@ -1,0 +1,194 @@
+Teng の基本的なつかいかた
+=========================
+
+## Teng の構造
+
+Teng のオブジェクトの構造は以下のようになっています。
+
+    Teng has_a Teng::Schema
+    Teng has_a DBI
+    Teng::Schema has_many Teng::Schema::Table
+    Teng::Schema::Table has_a RowClass
+
+## サンプルでつかうスキーマ
+
+今回のサンプルでつかうスキーマは以下のものです。
+
+    create table user (
+        id     integer NOT NULL auto_increment,
+        name   varchar(255) NOT NULL,
+        PRIMARY KEY (id)
+    );
+
+    create table bookmark (
+        id      int(10) NOT NULL auto_increment,
+        user_id int(10) NOT NULL,
+        url     text NOT NULL,
+        PRIMARY KEY (id),
+        INDEX (user_id),
+        FOREIGN KEY (user_id) REFERENCES user(id)
+    ) ENGINE = InnoDB;
+
+## スキーマ定義
+
+スキーマは以下のように定義します。
+
+    package Neko::Schema;
+    use Teng::Schema::Declare;
+
+    table 'user' => sub {
+        pk 'id';
+        columns qw/id name/;
+    };
+
+    table 'bookmark' => sub {
+        pk 'id';
+        columns qw/id user_id url/;
+    };
+
+    1;
+
+## DB クラスを定義する
+
+作らなくてもつかえるのですが、プラグインをつかいたいので定義します。
+
+ここでは Teng::Plugin::Count と Teng::Plugin::Pager をロードしておきましょう。
+
+    package Neko;
+    use parent qw/Teng/;
+    __PACKAGE__->load_plugin(qw/Count/);
+    __PACKAGE__->load_plugin(qw/Pager/);
+    1;
+
+## つかってみる
+
+Teng のインスタンスをつくります。
+
+    use Neko::Schema;
+    use Neko;
+
+    my $db = Neko->new(
+        connect_info => [
+            'dbi:SQLite::memory:', '', ''
+        ],
+        schema => Neko::Schema->instance(),
+    );
+
+`connect_info` にわたすのは DBI にわたすものとおなじです。
+
+## 基本的なデータオペレーション
+
+さて、Teng を実際につかってみましょう。
+
+### insert する
+
+insert は Teng#insert メソッドで発行します。
+
+    $db->insert('user' => {id => 1, name => 'nekokak'});
+
+発行されるクエリは以下のものです。
+    
+    INSERT INTO user (id, name) VALUES (1,'nekokak');
+
+Teng#insert メソッドは insert したデータの object をかえすために INSERT したあとに SELECT を発行することに注意してください。
+(オブジェクトが必要ない場合には `$db->fast_insert` メソッドをかわりに使います)
+
+### 簡単な select を発行する
+
+SELECT を発行するには search メソッドを発行します。
+
+    my @users = $db->search('user' => {});
+
+発行される SQL は以下のものです。
+
+    SELECT * FROM user;
+
+search メソッドの第２引数で WHERE 句を指定できます。SELECT 句の組み立ては SQL::Maker というモジュールが担当しているので、詳細は SQL::Maker のマニュアルをみるとよいでしょう。
+
+ただし、SQL::Maker のマニュアルをみなければわからないほど複雑なクエリをとりあつかいたい場合には、SQL を直でかいた方がいい場合が多いです。
+Teng では SQL を直でたたいた場合のとりあつかいも簡単なので、ごちゃごちゃと SQL::Maker でやるぐらいなら SQL を書きましょう。
+
+#### コンテキストと search メソッド
+
+search メソッドは list コンテキストだと全部のデータをリストでかえし、scalar コンテキストだとイテレータをかえします。
+イテレータは膨大な量のデータをとりあつかうときには便利ですが、実際には膨大な量のデータをとりあつかうときはちょっとずつデータを paging しながらとりだす場合が多いですし、ほとんどの場合はリストでとれば十分です。
+
+scalar コンテキストでとりあつかう場合のイテレータのとりあつかいを以下にしめします。
+
+    my $iter = $db->search('user' => {});
+    while (my $user = $iter->next) {
+        say $user->name;
+    }
+
+list コンテキストの場合には以下のようにシンプルになります。
+
+    my @users = $db->search('user' => {});
+    for my $user (@users) {
+        say $user->name;
+    }
+
+#### WHERE 句の記述
+
+TBD
+
+#### ページングしたい
+
+Teng::Plugin::Pager をロードしておけば、以下のようにつかえます。
+
+    my ($rows, $pager) = $db->search_with_pager('user', {}, {page => 1, rows => 10});
+
+$rows は行オブジェクトの ArrayRef です。$pager は Data::Page::NoTotalEntries のインタンスです。
+
+### count したい
+
+ユーザー数を集計する。
+
+    my $count = $db->count('user');
+
+ユーザー名が nomaneko な人をさがす。
+
+    my $count = $db->count('user' => {name => 'nomaneko'});
+
+ユーザー名が noma はじまりの人をさがす。
+
+    my $count = $db->count('user' => {name => {like => 'noma%'}});
+
+## リレーションシップ
+
+Teng にはリレーションシップをサポートする機能は意図的に削られているので自分で実装する必要がある。
+
+### ブックマークからユーザーをひけるようにする
+
+行オブジェクトに fetch\_user メソッドを追加します。
+
+    package Neko::Row::Bookmark;
+    use parent qw/Teng::Row/;
+    sub fetch_user {
+        my $self = shift;
+        $self->handle->single(user => { id => $self->user_id });
+    }
+    1;
+
+としておいて
+
+    my $bookmark = $db->single('bookmark', {id => 1});
+    say $bookmark->fetch_user->name;
+
+### ユーザーからブックマークをひけるようにする
+
+行オブジェクトに search\_bookmark メソッドを追加。
+
+    package Neko::Row::User;
+    use parent qw/Teng::Row/;
+    sub search_bookmark {
+        my ($self, $where, @args) = @_;
+        $where->{user_id} = $self->user_id;
+        $self->handle->search(bookmark => $where, @args);
+    }
+    1;
+
+としておいて
+
+    my $user = $db->single('user' => {id => 1});
+    say $_->url for $user->search_bookmarks();
+
