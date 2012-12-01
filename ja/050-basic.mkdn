@@ -31,13 +31,15 @@ Teng のオブジェクトの構造は以下のようになっています。
         PRIMARY KEY (id),
         INDEX (user_id),
         FOREIGN KEY (user_id) REFERENCES user(id)
-    ) ENGINE = InnoDB;
+    );
 
-## スキーマ定義
+## スキーマクラスを定義する
 
-スキーマは以下のように定義します。
+スキーマクラスは以下のように定義します。
 
     package Neko::Schema;
+    use strict;
+    use warnings;
     use Teng::Schema::Declare;
 
     table 'user' => sub {
@@ -51,6 +53,8 @@ Teng のオブジェクトの構造は以下のようになっています。
     };
 
     1;
+
+スキーマクラスの詳細については後述します。
 
 ## DB クラスを定義する
 
@@ -84,7 +88,8 @@ Teng のインスタンスをつくります。
 
 さて、Teng を実際につかってみましょう。
 
-## insert する
+insert したい
+-------------
 
 insert は Teng#insert メソッドで発行します。
 
@@ -95,9 +100,16 @@ insert は Teng#insert メソッドで発行します。
     INSERT INTO user (id, name) VALUES (1,'nekokak');
 
 Teng#insert メソッドは insert したデータの object をかえすために INSERT したあとに SELECT を発行することに注意してください。
-(オブジェクトが必要ない場合には `$db->fast_insert` メソッドをかわりに使います)
 
-## 簡単な select を発行する
+### fast_insert
+
+`Teng->insert` は、INSERT したデータを SELECT でとりなおすため、低速です。
+INSERT しっぱなしでオブジェクトが必要ない場合には `$db->fast_insert` メソッドをかわりに使うとよいです。
+
+    my $last_insert_id = $db->fast_insert('user' => {id => 1, name => 'nekokak'});
+
+SELECT を発行する
+-----------------
 
 SELECT を発行するには search メソッドを発行します。
 
@@ -194,9 +206,44 @@ $rows は行オブジェクトの ArrayRef です。$pager は Data::Page::NoTot
 
     my $count = $db->count('user' => {name => {like => 'noma%'}});
 
+UPDATE したい
+-------------
+
+UPDATE 文を発行するには二種類の方法があります。
+
+### SELECT した行から UPDATE する
+
+すでに選択した Row オブジェクトにたいして UPDATE 文を発行するパターンです。
+Row オブジェクトから PRIMARY KEY を選択するための WHERE 句が生成され、対象行にたいして UPDATE がおこなわれます。
+
+    my $row = $db->single(user => {id => 1});
+    $row->update({name => 'John'});
+
+アクセサで値を設定してから UPDATE することもできます。
+
+    my $row = $db->single(user => {id => 1});
+    $row->name('john');
+    $row->update();
+
+### UPDATE 文を直接うちこむ
+
+以下のように、UPDATE 文を直接うちこむこともできます。
+
+    $db->update(
+        'user' => {
+            name => 'nomaneko',
+        }, {
+            id => 1,
+        }
+    );
+
+この場合、UPDATE 文の生成結果は以下のようになります。
+
+    UPDATE user SET name="nomaneko" WHERE id=1;
+
 ## リレーションシップ
 
-Teng にはリレーションシップをサポートする機能は意図的に削られているので自分で実装する必要がある。
+Teng にはリレーションシップをサポートする機能は意図的に削られているので自分で実装する必要があります。
 
 ### ブックマークからユーザーをひけるようにする
 
