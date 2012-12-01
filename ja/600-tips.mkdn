@@ -1,6 +1,8 @@
 DBIx::QueryLog と DBIx::Tracer
 ===============================
 
+今回はデバッグ時に SQL を観察する方法ついてのべます。
+
 ## DBIx::QueryLog をつかいこなす
 
 なんだかんだ DBIx::QueryLog は便利です。
