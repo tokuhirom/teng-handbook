@@ -1,4 +1,85 @@
 トランザクションとTeng
 =======================
 
-TBD
+Teng の場合トランザクションは DBIx::TranscationManager というモジュールをもちいて管理します。
+
+基本的なつかいかたは非常に簡単です。以下のように書くだけです。
+
+    my $txn = $teng->txn_scope();
+    # ここでトランザクション内の処理をする
+    $txn->commit();
+
+`txn_scope` メソッドはトランザクションを開始し、DBIx::TransactionManager::ScopeGuard のオブジェクトをかえします。
+
+ユーザーは処理が完了したら `$txn->commit()` をよぶだけで OK です。処理が失敗して rollback したいときには `$txn->rollback()` をよびましょう。
+
+基本的な使い方はこれだけです。
+
+## どういう風にうごくの?
+
+`$teng->txn_scope()` が BEGIN を発行します。`$txn->commit` が COMMIT を発行。`$txn->rollback` が ROLLBACK を発行します。
+
+ただしネストしたトランザクションの場合はこのかぎりではありません。
+
+## ネストしたトランザクション
+
+`txn_scope()` はネストさせてつかうことが可能です。
+
+たとえば以下のように記述することが可能です。この場合、内側のトランザクションでは実際には BEGIN は発行されません。
+
+    my $txn = $teng->txn_scope();
+    {
+        my $txn = $teng->txn_scope();
+        {
+            my $txn = $teng->txn_scope();
+            ...
+            $txn->commit;
+        }
+        $txn->commit;
+    }
+    $txn->commit;
+
+全部の内側のトランザクションが commit され、一番外側のトランザクションが `$txn->commit` されたときにやっと COMMIT が発行されます。
+
+内側の $txn が一個でも `$txn->rollback()` された場合には外側のトランザクションは COMMIT されることはありません。
+
+### ネストしたトランザクションの実例
+
+このネストされたトランザクションの発行は軽量ですので、気軽につかうことができます。
+
+`find_or_create` のようなメソッドを `txn_scope` を利用して実装して、それを他のトランザクションから利用する、といったことも可能です。
+
+例を以下にあげます。
+
+    sub find_or_create {
+        my ($email) = @_;
+        my $txn = $teng->txn_scope();
+        my $member = $teng->single('member' => { email => $email }, {for_update => 1});
+        unless ($member) {
+            $member = $teng->insert('member' => { email => $email });
+        }
+        $txn->commit;
+        return $member;
+    }
+
+    sub do_anything {
+        my ($email) = @_;
+        my $txn = $teng->txn_scope();
+        my $member = find_or_create($email);
+        $teng->insert('member_foo' => { member_id => $member->id });
+        $txn->commit;
+    }
+
+## なぜ Guard をつかうの?
+
+普通に
+
+    $teng->do(q{BEGIN});
+
+を発行するのにくらべて、DBIx::TranscationManager をつかうことにはどのようなメリットがあるのでしょうか?
+
+これには以下のようなメリットがあります。
+
+    * COMMIT しわすれがすぐわかる
+    * トランザクションの範囲が明確になる
+
