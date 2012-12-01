@@ -10,6 +10,10 @@ Teng のオブジェクトの構造は以下のようになっています。
     Teng::Schema has_many Teng::Schema::Table
     Teng::Schema::Table has_a RowClass
 
+画像であらわすと以下のようになります。
+
+    ![teng class structure](img/teng-class-structure.png)
+
 ## サンプルでつかうスキーマ
 
 今回のサンプルでつかうスキーマは以下のものです。
