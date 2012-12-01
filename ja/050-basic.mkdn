@@ -12,7 +12,7 @@ Teng のオブジェクトの構造は以下のようになっています。
 
 画像であらわすと以下のようになります。
 
-    ![teng class structure](img/teng-class-structure.png)
+![teng class structure](img/teng-class-structure.png)
 
 ## サンプルでつかうスキーマ
 
